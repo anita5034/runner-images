@@ -43,11 +43,35 @@ jobs:
         run: |
           powershell -NoProfile -Command "if (-not (Get-Module -ListAvailable -Name Pester)) { Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck }"
 
-      - name: Run Pester tests
+      - name: Run Pester tests in 'tests' folders (or RunAll-Tests.ps1)
         shell: bash
         run: |
-          if [ "${{ matrix.pwsh }}" = "pwsh" ]; then
-            pwsh -NoProfile -Command 'Set-Location $GITHUB_WORKSPACE; Invoke-Pester -Script . -PassThru'
-          else
-            powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE; Invoke-Pester -Script . -PassThru"
+          set -euo pipefail
+          echo "Searching for 'tests' directories..."
+          # Find directories named 'tests' (max depth 4 to avoid scanning large dirs)
+          mapfile -t test_dirs < <(find . -type d -name tests -prune -print)
+          if [ ${#test_dirs[@]} -eq 0 ]; then
+            echo "No tests directories found. Exiting."
+            exit 0
           fi
+
+          for d in "${test_dirs[@]}"; do
+            echo "Processing tests folder: $d"
+            if [ "${{ matrix.pwsh }}" = "pwsh" ]; then
+              if [ -f "$d/RunAll-Tests.ps1" ]; then
+                echo "Found RunAll-Tests.ps1 in $d - running with pwsh"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; ./RunAll-Tests.ps1"
+              else
+                echo "No RunAll-Tests.ps1 in $d - invoking Invoke-Pester on folder"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; Invoke-Pester -Script . -PassThru"
+              fi
+            else
+              if [ -f "$d/RunAll-Tests.ps1" ]; then
+                echo "Found RunAll-Tests.ps1 in $d - running with powershell"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; ./RunAll-Tests.ps1"
+              else
+                echo "No RunAll-Tests.ps1 in $d - invoking Invoke-Pester on folder"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; Invoke-Pester -Script . -PassThru"
+              fi
+            fi
+          done
