@@ -1,0 +1,53 @@
+name: PowerShell Pester Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pester:
+    name: Run Pester tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+            pwsh: 'pwsh'
+          - os: windows-latest
+            runner: windows-latest
+            pwsh: 'powershell'
+          - os: macos-latest
+            runner: macos-latest
+            pwsh: 'pwsh'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        if: matrix.pwsh == 'pwsh'
+        uses: PowerShell/PowerShell@v2
+        with:
+          enablePSGallery: true
+
+      - name: Ensure Pester installed (pwsh)
+        if: matrix.pwsh == 'pwsh'
+        run: |
+          pwsh -Command "Install-Module -Name Pester -Force -Scope CurrentUser"
+
+      - name: Ensure Pester installed (windows powershell)
+        if: matrix.pwsh == 'powershell'
+        run: |
+          powershell -NoProfile -Command "if (-not (Get-Module -ListAvailable -Name Pester)) { Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck }"
+
+      - name: Run Pester tests
+        shell: bash
+        run: |
+          if [ "${{ matrix.pwsh }}" = "pwsh" ]; then
+            pwsh -NoProfile -Command 'Set-Location $GITHUB_WORKSPACE; Invoke-Pester -Script . -PassThru'
+          else
+            powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE; Invoke-Pester -Script . -PassThru"
+          fi
