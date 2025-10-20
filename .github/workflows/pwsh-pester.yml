@@ -46,16 +46,28 @@ jobs:
         run: |
           set -euo pipefail
           echo "Searching for 'tests' directories..."
-          # Find directories named 'tests' (max depth 4 to avoid scanning large dirs)
-          mapfile -t test_dirs < <(find . -type d -name tests -prune -print)
-          if [ ${#test_dirs[@]} -eq 0 ]; then
-            echo "No tests directories found. Exiting."
-            exit 0
-          fi
-
-          for d in "${test_dirs[@]}"; do
+          # Use a portable find + while-read loop to handle any shell
+          find . -type d -name tests -prune -print0 | while IFS= read -r -d '' d; do
             echo "Processing tests folder: $d"
+
+            # If present, run per-folder dependency installer scripts or module lists
             if [ "${{ matrix.pwsh }}" = "pwsh" ]; then
+              if [ -f "$d/TestDependencies.ps1" ]; then
+                echo "Executing TestDependencies.ps1 in $d"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; ./TestDependencies.ps1"
+              fi
+
+              if [ -f "$d/ps_modules.txt" ]; then
+                echo "Installing modules listed in $d/ps_modules.txt"
+                while IFS= read -r module || [ -n "$module" ]; do
+                  module=$(echo "$module" | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                  if [ -n "$module" ]; then
+                    echo "Installing PowerShell module: $module"
+                    pwsh -NoProfile -Command "Install-Module -Name '$module' -Force -Scope CurrentUser"
+                  fi
+                done < "$d/ps_modules.txt"
+              fi
+
               if [ -f "$d/RunAll-Tests.ps1" ]; then
                 echo "Found RunAll-Tests.ps1 in $d - running with pwsh"
                 pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; ./RunAll-Tests.ps1"
@@ -64,6 +76,22 @@ jobs:
                 pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; Invoke-Pester -Script . -PassThru"
               fi
             else
+              if [ -f "$d/TestDependencies.ps1" ]; then
+                echo "Executing TestDependencies.ps1 in $d (Windows PowerShell)"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; ./TestDependencies.ps1"
+              fi
+
+              if [ -f "$d/ps_modules.txt" ]; then
+                echo "Installing modules listed in $d/ps_modules.txt (Windows PowerShell)"
+                while IFS= read -r module || [ -n "$module" ]; do
+                  module=$(echo "$module" | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                  if [ -n "$module" ]; then
+                    echo "Installing PowerShell module: $module"
+                    powershell -NoProfile -Command "Install-Module -Name '$module' -Force -Scope CurrentUser -SkipPublisherCheck"
+                  fi
+                done < "$d/ps_modules.txt"
+              fi
+
               if [ -f "$d/RunAll-Tests.ps1" ]; then
                 echo "Found RunAll-Tests.ps1 in $d - running with powershell"
                 powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; ./RunAll-Tests.ps1"
