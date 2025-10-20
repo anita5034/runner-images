@@ -99,7 +99,17 @@ Describe "Nodes.UnitTests" {
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; MajorVersionRegex = "^\d+"; ListType = "List" }) } | Should -Throw '*Exception setting "Versions": "The argument is null or empty.*'
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @(); MajorVersionRegex = "^\d+"; ListType = "List" }) } | Should -Throw '*Exception setting "Versions": "The argument is null, empty,*'
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", '2.2.4'); MajorVersionRegex = "^\d+"; ListType = "List" }) } | Should -Throw 'Multiple versions from list * return the same result from regex *'
-            { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", "3.1.4"); MajorVersionRegex = ""; ListType = "List" }) } | Should -Throw 'Version * doesn''t match regex *'
+            # Depending on implementation, an empty regex may either cause ExtractMajorVersion to
+            # throw 'Version ... doesn''t match regex ...' or cause ValidateMajorVersionRegex to
+            # detect duplicate empty major versions and throw 'Multiple versions from list ...'.
+            $scriptBlock = { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", "3.1.4"); MajorVersionRegex = ""; ListType = "List" }) }
+            { $scriptBlock } | Should -Throw
+            try {
+                & $scriptBlock
+                throw "Expected exception"
+            } catch {
+                $_.Exception.Message | Should -Match "Version .* doesn't match regex .*|Multiple versions from list .* return the same result from regex .*"
+            }
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", "3.1.4"); MajorVersionRegex = "^\d+"; ListType = "Fake" }) } | Should -Throw '*Exception setting "ListType": "The argument * does not belong to the set*'
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", "3.1.4"); MajorVersionRegex = "^\d+"; ListType = "List" }) } | Should -Not -Throw
             { [ToolVersionsListNode]::FromJsonObject(@{ NodeType = "ToolVersionsListNode"; ToolName = "MyTool"; Versions = @("2.1.3", "3.1.4"); MajorVersionRegex = "^\d+"; ListType = "Inline" }) } | Should -Not -Throw

@@ -178,6 +178,21 @@ The availability of images for GitHub Actions and Azure DevOps is the same. Howe
 - [Azure DevOps](https://docs.microsoft.com/en-us/azure/devops/pipelines/agents/hosted?view=azure-devops&tabs=yaml#software)
 </details>
 
+## Ejecutar pruebas Pester localmente
+
+Si deseas ejecutar las pruebas PowerShell (Pester) que están incluidas en el repositorio, instala PowerShell y Pester en tu máquina y ejecuta desde la raíz del repo:
+
+```powershell
+# Instalar Pester (si no está instalado)
+Install-Module -Name Pester -Force -Scope CurrentUser
+
+# Ejecutar todas las pruebas desde la raíz
+Invoke-Pester -Script . -PassThru
+```
+
+También hemos agregado un workflow GitHub Actions (`.github/workflows/pwsh-pester.yml`) que ejecuta estas pruebas en Ubuntu, Windows y macOS.
+
+
 <details>
    <summary><b><i>What image version is used in my build?</b></i></summary>
 

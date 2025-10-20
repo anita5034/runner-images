@@ -1,0 +1,125 @@
+name: PowerShell Pester Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pester:
+    name: Run Pester tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+            pwsh: 'pwsh'
+          - os: windows-latest
+            runner: windows-latest
+            pwsh: 'powershell'
+          - os: macos-latest
+            runner: macos-latest
+            pwsh: 'pwsh'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Cache PowerShell modules (pwsh)
+        if: matrix.pwsh == 'pwsh'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/powershell/Modules
+            ~/.local/share/powershell/Modules
+          key: ps-modules-${{ runner.os }}-${{ hashFiles('**/ps_modules.txt') }}
+          restore-keys: |
+            ps-modules-${{ runner.os }}-
+
+      - name: Cache PowerShell modules (Windows)
+        if: matrix.pwsh == 'powershell'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.USERPROFILE }}\Documents\PowerShell\Modules
+            ${{ env.USERPROFILE }}\Documents\WindowsPowerShell\Modules
+          key: ps-modules-windows-${{ hashFiles('**/ps_modules.txt') }}
+          restore-keys: |
+            ps-modules-windows-
+
+      # Note: we rely on PowerShell being present on the hosted runner images
+      # and install Pester via Install-Module below. The PowerShell action was
+      # removed because its marketplace tag was not resolvable from the runner.
+
+      - name: Ensure Pester installed (pwsh)
+        if: matrix.pwsh == 'pwsh'
+        run: |
+          pwsh -NoProfile -Command "if (-not (Get-Module -ListAvailable -Name Pester)) { $max=3; $i=0; while ($i -lt $max) { try { Install-Module -Name Pester -Force -Scope CurrentUser -ErrorAction Stop; break } catch { $i++; if ($i -lt $max) { Start-Sleep -Seconds (2 * $i) } else { throw } } } }"
+
+      - name: Ensure Pester installed (windows powershell)
+        if: matrix.pwsh == 'powershell'
+        run: |
+          powershell -NoProfile -Command "if (-not (Get-Module -ListAvailable -Name Pester)) { $max=3; $i=0; while ($i -lt $max) { try { Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck -ErrorAction Stop; break } catch { $i++; if ($i -lt $max) { Start-Sleep -Seconds (2 * $i) } else { throw } } } }"
+
+      - name: Run Pester tests in 'tests' folders (or RunAll-Tests.ps1)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Searching for 'tests' directories..."
+          # Use a portable find + while-read loop to handle any shell
+          find . -type d -name tests -prune -print0 | while IFS= read -r -d '' d; do
+            echo "Processing tests folder: $d"
+
+            # If present, run per-folder dependency installer scripts or module lists
+            if [ "${{ matrix.pwsh }}" = "pwsh" ]; then
+              if [ -f "$d/TestDependencies.ps1" ]; then
+                echo "Executing TestDependencies.ps1 in $d"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; ./TestDependencies.ps1"
+              fi
+
+              if [ -f "$d/ps_modules.txt" ]; then
+                echo "Installing modules listed in $d/ps_modules.txt"
+                while IFS= read -r module || [ -n "$module" ]; do
+                  module=$(echo "$module" | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                  if [ -n "$module" ]; then
+                    echo "Installing PowerShell module: $module"
+                    pwsh -NoProfile -Command "Install-Module -Name '$module' -Force -Scope CurrentUser"
+                  fi
+                done < "$d/ps_modules.txt"
+              fi
+
+              if [ -f "$d/RunAll-Tests.ps1" ]; then
+                echo "Found RunAll-Tests.ps1 in $d - running with pwsh"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; ./RunAll-Tests.ps1"
+              else
+                echo "No RunAll-Tests.ps1 in $d - invoking Invoke-Pester on folder"
+                pwsh -NoProfile -Command "Set-Location '$GITHUB_WORKSPACE/$d'; Invoke-Pester -Script . -PassThru"
+              fi
+            else
+              if [ -f "$d/TestDependencies.ps1" ]; then
+                echo "Executing TestDependencies.ps1 in $d (Windows PowerShell)"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; ./TestDependencies.ps1"
+              fi
+
+              if [ -f "$d/ps_modules.txt" ]; then
+                echo "Installing modules listed in $d/ps_modules.txt (Windows PowerShell)"
+                while IFS= read -r module || [ -n "$module" ]; do
+                  module=$(echo "$module" | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                  if [ -n "$module" ]; then
+                    echo "Installing PowerShell module: $module"
+                    powershell -NoProfile -Command "Install-Module -Name '$module' -Force -Scope CurrentUser -SkipPublisherCheck"
+                  fi
+                done < "$d/ps_modules.txt"
+              fi
+
+              if [ -f "$d/RunAll-Tests.ps1" ]; then
+                echo "Found RunAll-Tests.ps1 in $d - running with powershell"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; ./RunAll-Tests.ps1"
+              else
+                echo "No RunAll-Tests.ps1 in $d - invoking Invoke-Pester on folder"
+                powershell -NoProfile -Command "Set-Location $env:GITHUB_WORKSPACE\$d; Invoke-Pester -Script . -PassThru"
+              fi
+            fi
+          done
