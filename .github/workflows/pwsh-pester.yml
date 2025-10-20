@@ -27,11 +27,9 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup PowerShell
-        if: matrix.pwsh == 'pwsh'
-        uses: PowerShell/PowerShell@v1
-        with:
-          enablePSGallery: true
+      # Note: we rely on PowerShell being present on the hosted runner images
+      # and install Pester via Install-Module below. The PowerShell action was
+      # removed because its marketplace tag was not resolvable from the runner.
 
       - name: Ensure Pester installed (pwsh)
         if: matrix.pwsh == 'pwsh'
