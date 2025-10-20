@@ -27,6 +27,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Cache PowerShell modules (pwsh)
+        if: matrix.pwsh == 'pwsh'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/powershell/Modules
+            ~/.local/share/powershell/Modules
+          key: ps-modules-${{ runner.os }}-${{ hashFiles('**/ps_modules.txt') }}
+          restore-keys: |
+            ps-modules-${{ runner.os }}-
+
+      - name: Cache PowerShell modules (Windows)
+        if: matrix.pwsh == 'powershell'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.USERPROFILE }}\Documents\PowerShell\Modules
+            ${{ env.USERPROFILE }}\Documents\WindowsPowerShell\Modules
+          key: ps-modules-windows-${{ hashFiles('**/ps_modules.txt') }}
+          restore-keys: |
+            ps-modules-windows-
+
       # Note: we rely on PowerShell being present on the hosted runner images
       # and install Pester via Install-Module below. The PowerShell action was
       # removed because its marketplace tag was not resolvable from the runner.
